@@ -353,6 +353,7 @@ MigrationBackup/
 # Fusion Build Results
 LabFusion/FusionBundles/Assets/AssetBundles/
 [Bb]uilt[Pp]allets
+dist/
 
 # Fusion Staging
 Staging/Thunderstore/Mods

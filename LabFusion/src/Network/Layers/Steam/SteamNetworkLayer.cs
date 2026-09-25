@@ -283,15 +283,24 @@ public abstract class SteamNetworkLayer : NetworkLayer
         if (!_isServerActive && !_isConnectionActive)
             return;
 
+        // Close each separately so a failure closing one (usually because Steam already closed it)
+        // doesn't leave the other open, and log what actually failed
         try
         {
             SteamConnection?.Close();
+        }
+        catch (Exception exception)
+        {
+            FusionLogger.Log($"Steam connection was already closed: {exception.Message}");
+        }
 
+        try
+        {
             SteamSocket?.Close();
         }
-        catch
+        catch (Exception exception)
         {
-            FusionLogger.Log("Error closing socket server / connection manager");
+            FusionLogger.Log($"Steam socket server was already closed: {exception.Message}");
         }
 
         _isServerActive = false;

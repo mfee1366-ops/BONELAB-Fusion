@@ -26,15 +26,13 @@ public static class AmmoPlugPatches
         }
     }
 
-    [HarmonyPostfix]
+    [HarmonyFinalizer]
     [HarmonyPatch(nameof(AmmoPlug.OnPlugInsertComplete))]
-    public static void OnPlugInsertCompletePostfix(AmmoPlug __instance)
+    public static Exception OnPlugInsertCompleteFinalizer(Exception __exception)
     {
-        if (!NetworkSceneManager.IsLevelNetworked)
-        {
-            return;
-        }
-
+        // A postfix is skipped when the game method throws. Always restore this
+        // global guard so one broken magazine cannot affect later despawns.
         PooleeDespawnPatch.IgnorePatch = false;
+        return __exception;
     }
 }

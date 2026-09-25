@@ -20,6 +20,16 @@ public static class SavedServerSettings
     public static FusionPref<TimeScaleMode> SlowMoMode { get; private set; }
     public static FusionPref<int> MaxPlayers { get; private set; }
 
+    // Network optimization
+    public static FusionPref<bool> AdaptivePoseRates { get; private set; }
+    public static FusionPref<int> NetworkTickRate { get; private set; }
+    public static FusionPref<bool> HostRelayCulling { get; private set; }
+    public static FusionPref<float> PlayerRelevanceRange { get; private set; }
+    public static FusionPref<float> PropRelevanceRange { get; private set; }
+    public static FusionPref<float> VoiceRelevanceRange { get; private set; }
+    public static FusionPref<int> PropOwnershipLimit { get; private set; }
+    public static FusionPref<int> SpawnLimitPerTenSeconds { get; private set; }
+
     // Visual
     public static FusionPref<string> ServerName { get; private set; }
     public static FusionPref<string> ServerDescription { get; private set; }
@@ -52,6 +62,15 @@ public static class SavedServerSettings
         Privacy = new FusionPref<ServerPrivacy>(category, "Server Privacy", ServerPrivacy.PUBLIC, updateMode);
         SlowMoMode = new FusionPref<TimeScaleMode>(category, "Time Scale Mode", TimeScaleMode.LOW_GRAVITY, updateMode);
         MaxPlayers = new FusionPref<int>(category, "Max Players", 10, updateMode);
+
+        AdaptivePoseRates = new FusionPref<bool>(category, "Server Adaptive Pose Rates", true, updateMode);
+        NetworkTickRate = new FusionPref<int>(category, "Server Network Tick Rate", NetworkOptimizationState.DefaultTickRate, updateMode);
+        HostRelayCulling = new FusionPref<bool>(category, "Server Host Relay Culling", false, updateMode);
+        PlayerRelevanceRange = new FusionPref<float>(category, "Server Player Relevance Range", 100f, updateMode);
+        PropRelevanceRange = new FusionPref<float>(category, "Server Prop Relevance Range", 75f, updateMode);
+        VoiceRelevanceRange = new FusionPref<float>(category, "Server Voice Relevance Range", 35f, updateMode);
+        PropOwnershipLimit = new FusionPref<int>(category, "Server Prop Ownership Limit", 24, updateMode);
+        SpawnLimitPerTenSeconds = new FusionPref<int>(category, "Server Spawn Limit Per 10 Seconds", 20, updateMode);
 
         // Visual
         ServerName = new FusionPref<string>(category, "Server Name", string.Empty, updateMode);

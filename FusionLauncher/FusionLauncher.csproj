@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PlatformTarget>x64</PlatformTarget>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\LabFusion\dependencies\Facepunch.Steamworks\**\*.cs"
+             Link="Steamworks\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Content Include="..\LabFusion\dependencies\resources\lib\x86_64\steam_api64.dll"
+             Link="steam_api64.dll" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\LabFusion\bin\Release\net6.0\LabFusion.dll"
+             Link="LabFusion.dll" CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <EmbeddedResource Include="..\LabFusion\bin\Release\net6.0\LabFusion.dll"
+                      LogicalName="FusionLauncher.Bundled.LabFusion.dll" />
+  </ItemGroup>
+</Project>

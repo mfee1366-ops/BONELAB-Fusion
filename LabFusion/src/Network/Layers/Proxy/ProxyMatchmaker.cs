@@ -20,7 +20,7 @@ public sealed class ProxyMatchmaker : IMatchmaker
 
     public void RequestLobbies(MatchmakerFilters filters, Action<IMatchmaker.MatchmakerCallbackInfo> callback)
     {
-        var version = FusionMod.Version;
+        var version = FusionMod.NetworkVersion;
 
         var parameters = new ProxyLobbyRequestParameters()
         {
@@ -35,7 +35,7 @@ public sealed class ProxyMatchmaker : IMatchmaker
 
     public void RequestLobbiesByCode(string code, Action<IMatchmaker.MatchmakerCallbackInfo> callback)
     {
-        var version = FusionMod.Version;
+        var version = FusionMod.NetworkVersion;
 
         var parameters = new ProxyLobbyRequestParameters()
         {

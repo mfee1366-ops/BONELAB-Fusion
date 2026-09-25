@@ -9,6 +9,7 @@ namespace LabFusion.Network.Serialization;
 
 public sealed class NetReader : INetSerializer, IDisposable
 {
+    [ThreadStatic] private static Stack<NetReader> _readerPool;
     private byte[] _buffer = null;
 
     public bool IsReader => true;
@@ -18,13 +19,15 @@ public sealed class NetReader : INetSerializer, IDisposable
     public int Length { get; set; }
 
     public static NetReader Create(byte[] buffer)
+        => Create(buffer, buffer.Length);
+
+    public static NetReader Create(byte[] buffer, int length)
     {
-        var reader = new NetReader
-        {
-            _buffer = buffer,
-            Position = 0,
-            Length = buffer.Length,
-        };
+        var pool = _readerPool ??= new Stack<NetReader>(16);
+        var reader = pool.Count > 0 ? pool.Pop() : new NetReader();
+        reader._buffer = buffer;
+        reader.Position = 0;
+        reader.Length = length;
         return reader;
     }
 
@@ -300,6 +303,10 @@ public sealed class NetReader : INetSerializer, IDisposable
 
     public void Dispose()
     {
-        GC.SuppressFinalize(this);
+        if (_buffer == null) return;
+        _buffer = null;
+        Position = Length = 0;
+        var pool = _readerPool ??= new Stack<NetReader>(16);
+        if (pool.Count < 64) pool.Push(this);
     }
 }

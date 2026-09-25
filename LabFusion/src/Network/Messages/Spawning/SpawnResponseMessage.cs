@@ -12,6 +12,7 @@ using LabFusion.Safety;
 using LabFusion.Marrow.Pool;
 using LabFusion.Marrow.Extenders;
 using LabFusion.Marrow.Serialization;
+using LabFusion.UI.Popups;
 
 using Il2CppSLZ.Marrow.Pool;
 using Il2CppSLZ.Marrow.Warehouse;
@@ -74,6 +75,12 @@ public class SpawnResponseMessage : NativeMessageHandler
 
         if (!hasCrate)
         {
+            // An empty barcode can't be downloaded or spawned, so don't try (it used to log a failed download)
+            if (string.IsNullOrWhiteSpace(barcode) || barcode.Equals(Barcode.EMPTY, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
             bool shouldDownload = ClientSettings.Downloading.DownloadSpawnables.Value;
 
             // Check if we should download the mod (it's not blacklisted, mod downloading disabled, etc.)
@@ -82,15 +89,21 @@ public class SpawnResponseMessage : NativeMessageHandler
                 return;
             }
 
-            long maxBytes = DataConversions.ConvertMegabytesToBytes(ClientSettings.Downloading.MaxFileSize.Value);
+            BeginRequestedDownload();
+            return;
 
-            NetworkModRequester.RequestAndInstallMod(new NetworkModRequester.ModInstallInfo()
-            { 
-                Target = owner,
-                Barcode = barcode,
-                FinishDownloadCallback = OnModDownloaded,
-                MaxBytes = maxBytes,
-            });
+            void BeginRequestedDownload()
+            {
+                long maxBytes = DataConversions.ConvertMegabytesToBytes(ClientSettings.Downloading.MaxFileSize.Value);
+
+                NetworkModRequester.RequestAndInstallMod(new NetworkModRequester.ModInstallInfo()
+                {
+                    Target = owner,
+                    Barcode = barcode,
+                    FinishDownloadCallback = OnModDownloaded,
+                    MaxBytes = maxBytes,
+                });
+            }
 
             void OnModDownloaded(DownloadCallbackInfo info)
             {
@@ -105,7 +118,6 @@ public class SpawnResponseMessage : NativeMessageHandler
                 BeginSpawn();
             }
 
-            return;
         }
 
         BeginSpawn();
@@ -173,6 +185,11 @@ public class SpawnResponseMessage : NativeMessageHandler
     {
         // Create a network entity
         var playerID = PlayerIDManager.GetPlayerID(ownerID);
+        if (playerID == null || !playerID.IsValid)
+        {
+            FusionLogger.Warn($"Ignored spawn for entity {entityID} because owner {ownerID} is no longer connected.");
+            return null;
+        }
 
         NetworkEntity networkEntity = new()
         {

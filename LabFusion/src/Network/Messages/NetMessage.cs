@@ -2,12 +2,15 @@
 using LabFusion.SDK.Modules;
 
 using System.Buffers.Binary;
+using System.Buffers;
 using System.Runtime.InteropServices;
 
 namespace LabFusion.Network;
 
 public unsafe class NetMessage : IDisposable
 {
+    private byte[] _managedBuffer;
+    private GCHandle _pin;
     private byte* _buffer;
     private int _size;
 
@@ -21,6 +24,9 @@ public unsafe class NetMessage : IDisposable
         }
     }
 
+    public byte Tag { get; private set; }
+    public ushort? EntityID { get; private set; }
+
     public byte* Buffer
     {
         get
@@ -29,14 +35,25 @@ public unsafe class NetMessage : IDisposable
         }
     }
 
-    private static NetMessage Create(int size)
+    private static NetMessage Create(int size, byte tag)
     {
+        var rented = ArrayPool<byte>.Shared.Rent(size);
+        var pin = GCHandle.Alloc(rented, GCHandleType.Pinned);
         return new NetMessage()
         {
-            _buffer = (byte*)Marshal.AllocHGlobal(size),
+            _managedBuffer = rented,
+            _pin = pin,
+            _buffer = (byte*)pin.AddrOfPinnedObject(),
             _size = size,
+            Tag = tag,
             _disposed = false,
         };
+    }
+
+    private static NetMessage CreateOwned(byte[] rented, int size, byte tag)
+    {
+        var pin = GCHandle.Alloc(rented, GCHandleType.Pinned);
+        return new NetMessage { _managedBuffer = rented, _pin = pin, _buffer = (byte*)pin.AddrOfPinnedObject(), _size = size, Tag = tag };
     }
 
     public static NetMessage Create(byte tag, NetWriter writer, MessageRoute route, byte? sender = null)
@@ -58,14 +75,10 @@ public unsafe class NetMessage : IDisposable
         writer.SerializeValue(ref prefix);
         writer.Write(buffer);
 
-        int size = writer.Length;
-        var message = Create(size);
-
-        for (var i = 0; i < size; i++)
-        {
-            message._buffer[i] = writer.Buffer[i];
-        }
-
+        var owned = writer.DetachBuffer(out int size);
+        var message = CreateOwned(owned, size, tag);
+        if (tag == NativeMessageTag.EntityPoseUpdate && buffer.Count >= sizeof(ushort))
+            message.EntityID = BinaryPrimitives.ReadUInt16BigEndian(buffer.AsSpan(0, sizeof(ushort)));
         return message;
     }
 
@@ -78,19 +91,16 @@ public unsafe class NetMessage : IDisposable
             Sender = received.Sender,
         };
 
-        using var writer = NetWriter.Create(prefix.GetSize().Value + received.Bytes.Length + sizeof(int));
+        int payloadLength = received.Length;
+        using var writer = NetWriter.Create(prefix.GetSize().Value + payloadLength + sizeof(int));
 
         writer.SerializeValue(ref prefix);
-        writer.Write(received.Bytes);
+        writer.Write(new ArraySegment<byte>(received.Bytes, 0, payloadLength));
 
-        int size = writer.Length;
-        var message = Create(size);
-
-        for (var i = 0; i < size; i++)
-        {
-            message._buffer[i] = writer.Buffer[i];
-        }
-
+        var owned = writer.DetachBuffer(out int size);
+        var message = CreateOwned(owned, size, tag);
+        if (tag == NativeMessageTag.EntityPoseUpdate && payloadLength >= sizeof(ushort))
+            message.EntityID = BinaryPrimitives.ReadUInt16BigEndian(received.Bytes.AsSpan(0, sizeof(ushort)));
         return message;
     }
 
@@ -132,24 +142,12 @@ public unsafe class NetMessage : IDisposable
 
         writer.SerializeValue(ref prefix);
 
-        var expandedBuffer = new byte[buffer.Count + sizeof(long)];
+        writer.Write(buffer.Count + sizeof(long));
+        writer.Write(value);
+        writer.WriteRaw(buffer);
 
-        BinaryPrimitives.WriteInt64BigEndian(expandedBuffer, value);
-
-        for (var i = 0; i < buffer.Count; i++)
-        {
-            expandedBuffer[i + sizeof(long)] = buffer[i];
-        }
-
-        writer.Write(expandedBuffer);
-
-        int size = writer.Length;
-        var message = Create(size);
-
-        for (var i = 0; i < size; i++)
-        {
-            message._buffer[i] = writer.Buffer[i];
-        }
+        var owned = writer.DetachBuffer(out int size);
+        var message = CreateOwned(owned, size, NativeMessageTag.Module);
 
         return message;
     }
@@ -171,7 +169,12 @@ public unsafe class NetMessage : IDisposable
         }
 
         GC.SuppressFinalize(this);
-        Marshal.FreeHGlobal((IntPtr)_buffer);
+        _buffer = null;
+        if (_pin.IsAllocated)
+            _pin.Free();
+        if (_managedBuffer != null)
+            ArrayPool<byte>.Shared.Return(_managedBuffer);
+        _managedBuffer = null;
 
         _disposed = true;
     }

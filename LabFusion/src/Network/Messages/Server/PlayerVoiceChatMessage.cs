@@ -34,6 +34,9 @@ public class PlayerVoiceChatMessage : NativeMessageHandler
             return;
         }
 
+        if (!NetworkRelevance.ShouldProcessIncomingVoice(sender.Value))
+            return;
+
         // Check if voice chat is active
         if (VoiceInfo.IsDeafened)
         {

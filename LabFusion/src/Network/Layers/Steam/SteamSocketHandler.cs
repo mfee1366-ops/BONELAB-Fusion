@@ -26,6 +26,7 @@ public static class SteamSocketHandler
         {
             connection.SendMessage((IntPtr)message.Buffer, sizeOfMessage, sendType);
         }
+        NetworkMetrics.RecordSend(message.Tag, sizeOfMessage);
     }
 
     public static void BroadcastToClients(this SteamSocketManager socketManager, NetworkChannel channel, NetMessage message)
@@ -39,10 +40,13 @@ public static class SteamSocketHandler
         {
             IntPtr messagePtr = (IntPtr)message.Buffer;
 
+            int recipients = 0;
             foreach (var connection in socketManager.Connected)
             {
                 connection.SendMessage(messagePtr, sizeOfMessage, sendType);
+                recipients++;
             }
+            NetworkMetrics.RecordSend(message.Tag, sizeOfMessage, recipients);
         }
     }
 
@@ -71,6 +75,7 @@ public static class SteamSocketHandler
                         throw new Exception($"Steam result was {retry}.");
                     }
                 }
+                NetworkMetrics.RecordSend(message.Tag, sizeOfMessage);
             }
         }
         catch (Exception e)

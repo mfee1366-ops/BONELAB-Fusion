@@ -2,6 +2,7 @@
 
 using LabFusion.Data;
 using LabFusion.Network;
+using LabFusion.Patching;
 using LabFusion.Utilities;
 using LabFusion.Scene;
 using LabFusion.Grabbables;
@@ -47,9 +48,9 @@ public struct FusionVersion
 #else
     public const byte VersionMajor = 1;
     public const byte VersionMinor = 14;
-    public const short VersionPatch = 1;
+    public const short VersionPatch = 2;
 
-    public const string VersionString = "1.14.1";
+    public const string VersionString = "1.14.2";
 #endif
 }
 
@@ -61,6 +62,11 @@ public class FusionMod : MelonMod
     public const string GameDeveloper = "Stress Level Zero";
 
     public static readonly Version Version = new(FusionVersion.VersionMajor, FusionVersion.VersionMinor, FusionVersion.VersionPatch);
+
+    // Keep the protocol identity on the upstream 1.14 line. The optimized fork
+    // does not change any wire formats, so advertising 1.15 here would make
+    // unmodified 1.14.1/1.14.2 peers reject an otherwise compatible client.
+    public static readonly Version NetworkVersion = new(1, 14, 2);
 
     public static string Changelog { get; internal set; } = null;
 
@@ -150,6 +156,10 @@ public class FusionMod : MelonMod
         // Initialize the networking manager
         NetworkLayerManager.OnInitializeMelon();
 
+        // Process an optional server selected by the desktop launcher.
+        LauncherJoinHandler.OnInitialize();
+        DedicatedServerHandler.OnInitialize();
+
 #if DEBUG
         FusionUnityLogger.OnInitializeMelon();
 #endif
@@ -210,6 +220,9 @@ public class FusionMod : MelonMod
 
     public static void OnMainSceneInitialized()
     {
+        // Levels can reset the fixed timestep, so reapply the configured physics rate
+        PhysicsRatePatches.Apply();
+
         string sceneName = FusionSceneManager.Level.Title;
 
 #if DEBUG
@@ -220,7 +233,10 @@ public class FusionMod : MelonMod
         NetworkEntityManager.OnCleanupIds();
 
         RigData.OnCacheRigInfo();
-        PersistentAssetCreator.OnMainSceneInitialized();
+        // FlatPlayer does not create the VR menu grips. Dedicated servers do not
+        // need those assets, and trying to build them causes an exception every tick.
+        if (!DedicatedServerHandler.IsActive)
+            PersistentAssetCreator.OnMainSceneInitialized();
         ConstrainerUtilities.OnMainSceneInitialized();
 
         // Update hooks
@@ -231,6 +247,9 @@ public class FusionMod : MelonMod
 
     public static void OnMainSceneInitializeDelayed()
     {
+        if (DedicatedServerHandler.IsActive)
+            return;
+
         // Make sure the rig exists
         if (!RigData.HasPlayer)
         {
@@ -252,6 +271,7 @@ public class FusionMod : MelonMod
 
     public override void OnUpdate()
     {
+        NetworkMetrics.BeginTick();
         // Reset byte counts
         NetworkInfo.BytesDown = 0;
         NetworkInfo.BytesUp = 0;
@@ -298,6 +318,7 @@ public class FusionMod : MelonMod
 
         // Update delayed events at the very end of the frame
         DelayUtilities.OnProcessDelays();
+        NetworkMetrics.EndTick();
     }
 
     public override void OnFixedUpdate()

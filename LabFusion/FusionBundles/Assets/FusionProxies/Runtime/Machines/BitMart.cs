@@ -96,10 +96,25 @@ namespace LabFusion.Marrow.Proxies
 
         private void OnLevelLoad()
         {
-            MenuButtonHelper.PopulateTexts(gameObject);
-            MenuButtonHelper.PopulateButtons(gameObject);
+            // This callback can outlive the pooled BitMart across a level change.
+            if (!this)
+            {
+                return;
+            }
 
-            MusicSource.outputAudioMixerGroup = Audio3dManager.diegeticMusic;
+            var owner = gameObject;
+            if (!owner)
+            {
+                return;
+            }
+
+            MenuButtonHelper.PopulateTexts(owner);
+            MenuButtonHelper.PopulateButtons(owner);
+
+            if (MusicSource)
+            {
+                MusicSource.outputAudioMixerGroup = Audio3dManager.diegeticMusic;
+            }
         }
 
         private void Update()

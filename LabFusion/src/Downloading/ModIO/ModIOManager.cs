@@ -62,6 +62,8 @@ public static class ModIOManager
 
         using HttpClient client = new(handler);
         client.DefaultRequestHeaders.Add("Authorization", "Bearer " + token);
+        client.DefaultRequestHeaders.Add("X-Modio-Platform", GetActivePlatform());
+        client.DefaultRequestHeaders.Add("X-Modio-Portal", "steam");
 
         // Read the mod json
         Task<Stream> streamTask;

@@ -107,12 +107,20 @@ public static class LevelDownloaderManager
 
     private static void OnUpdate()
     {
-        if (!_downloadingLevel || ModIODownloader.CurrentTransaction == null)
+        if (!_downloadingLevel)
         {
             return;
         }
 
-        float progress = ModIODownloader.CurrentTransaction.Progress;
+        // Several mods can download at once, so find this level's own transaction
+        var transaction = ModIODownloader.GetTransaction(_downloadingFile.ModID);
+
+        if (transaction == null)
+        {
+            return;
+        }
+
+        float progress = transaction.Progress;
 
         var ui = LevelDownloadUI.Instance;
 

@@ -4,9 +4,9 @@ namespace LabFusion.Network;
 
 public static class NetworkTickManager
 {
-    public static readonly float TickRate = 20f;
+    public static float TickRate => NetworkOptimizationState.TickRate;
     
-    public static readonly float SecondsBetweenTicks = 1f / TickRate;
+    public static float SecondsBetweenTicks => 1f / TickRate;
 
     public static readonly float InterpolationDecayRate = 36f;
 
@@ -34,6 +34,7 @@ public static class NetworkTickManager
         {
             _tickElapsed -= SecondsBetweenTicks;
             IsTickThisFrame = true;
+            NetworkMetrics.ActiveMovingProps = 0;
         }
     }
 }

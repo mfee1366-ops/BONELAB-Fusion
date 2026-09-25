@@ -56,14 +56,29 @@ public abstract class NativeMessageHandler : MessageHandler
 
         try
         {
-            using var reader = NetReader.Create(message.Buffer.ToArray());
+            var buffer = message.Buffer;
+            int position = 0;
+            tag = buffer[position++];
+            var route = new MessageRoute
+            {
+                Type = (RelayType)buffer[position++],
+                Channel = (NetworkChannel)buffer[position++],
+                Targets = ArraySegment<byte>.Empty,
+            };
 
-            MessagePrefix prefix = null;
-            reader.SerializeValue(ref prefix);
+            if (route.Type == RelayType.ToTarget)
+                route.Target = buffer[position++] == 1 ? buffer[position++] : null;
+            else if (route.Type == RelayType.ToTargets)
+            {
+                int targetCount = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(buffer.Slice(position, sizeof(int)));
+                position += sizeof(int);
+                route.Targets = new ArraySegment<byte>(buffer.Slice(position, targetCount).ToArray());
+                position += targetCount;
+            }
 
-            MessageRoute route = prefix.Route;
-
-            byte? sender = prefix.Sender;
+            byte? sender = null;
+            if (route.Type != RelayType.None)
+                sender = buffer[position++] == 1 ? buffer[position++] : null;
             ulong? platformID = message.PlatformID;
 
             // Prevent ID spoofing
@@ -73,9 +88,13 @@ public abstract class NativeMessageHandler : MessageHandler
                 return;
             }
 
-            var bytes = reader.ReadBytes();
-
-            tag = prefix.Tag;
+            int payloadLength = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(buffer.Slice(position, sizeof(int)));
+            position += sizeof(int);
+            if (payloadLength < 0 || payloadLength > buffer.Length - position)
+                throw new InvalidDataException("Network payload length exceeds the received packet.");
+            var bytes = System.Buffers.ArrayPool<byte>.Shared.Rent(System.Math.Max(payloadLength, 1));
+            buffer.Slice(position, payloadLength).CopyTo(bytes);
+            NetworkMetrics.RecordReceive(tag, size);
 
             if (Handlers[tag] != null)
             {
@@ -85,17 +104,22 @@ public abstract class NativeMessageHandler : MessageHandler
                     Sender = sender,
                     PlatformID = platformID,
                     Bytes = bytes,
+                    PayloadLength = payloadLength,
+                    IsPooled = true,
                     IsServerHandled = message.IsServerHandled,
                 };
 
+                long handlerStart = System.Diagnostics.Stopwatch.GetTimestamp();
                 Handlers[tag].StartHandlingMessage(payload);
+                NetworkMetrics.RecordHandler(tag, System.Diagnostics.Stopwatch.GetTimestamp() - handlerStart);
             }
-#if DEBUG
             else
             {
+#if DEBUG
                 FusionLogger.Warn($"Received message with invalid tag {tag}!");
-            }
 #endif
+                System.Buffers.ArrayPool<byte>.Shared.Return(bytes);
+            }
         }
         catch (Exception e)
         {

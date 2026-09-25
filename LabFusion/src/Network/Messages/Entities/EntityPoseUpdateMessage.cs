@@ -28,6 +28,12 @@ public class EntityPoseUpdateMessage : NativeMessageHandler
     {
         var data = received.ReadData<EntityPoseUpdateData>();
 
+        // Clients can skip distant props, but the host is authoritative and must keep every pose current
+        if (!NetworkInfo.IsHost && data.Pose?.Bodies != null && data.Pose.Bodies.Length > 0 &&
+            !NetworkRelevance.ShouldProcessIncoming(data.Pose.Bodies[0].Position,
+                NetworkOptimizationState.ClientPropRange))
+            return;
+
         // Find the network entity
         var entity = data.GetEntity();
 

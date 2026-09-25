@@ -17,7 +17,7 @@ public static class LobbyFilterManager
 
     public static GenericLobbyFilter MismatchingVersionsFilter { get; } = new("Hide Mismatching Versions", (l, i) =>
     {
-        return NetworkVerification.CompareVersion(i.LobbyInfo.LobbyVersion, FusionMod.Version) == VersionResult.Ok;
+        return NetworkVerification.CompareVersion(i.LobbyInfo.LobbyVersion, FusionMod.NetworkVersion) == VersionResult.Ok;
     });
 
     public static GenericLobbyFilter FriendsFilter { get; } = new("Friends Only", (l, i) =>

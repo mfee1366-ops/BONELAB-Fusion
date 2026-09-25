@@ -50,11 +50,14 @@ public static class LaserCursorPatches
         // Otherwise, NetworkPlayers would be able to trigger the UI
         var controllers = new List<BaseController>();
 
-        foreach (var controller in laserCursor.controllers)
+        if (laserCursor.controllers != null)
         {
-            if (controller.contRig.manager.IsLocalPlayer())
+            foreach (var controller in laserCursor.controllers)
             {
-                controllers.Add(controller);
+                if (IsLocalController(controller))
+                {
+                    controllers.Add(controller);
+                }
             }
         }
 
@@ -63,14 +66,38 @@ public static class LaserCursorPatches
         // Also remove controllers from the controllerInput dictionary
         var controllerInput = new Il2CppSystem.Collections.Generic.Dictionary<BaseController, Transform>();
 
-        foreach (var pair in laserCursor.controllerInput)
+        if (laserCursor.controllerInput != null)
         {
-            if (pair.Key.contRig.manager.IsLocalPlayer())
+            foreach (var pair in laserCursor.controllerInput)
             {
-                controllerInput.Add(pair.Key, pair.Value);
+                if (IsLocalController(pair.Key))
+                {
+                    controllerInput.Add(pair.Key, pair.Value);
+                }
             }
         }
 
         laserCursor.controllerInput = controllerInput;
+    }
+
+    /// <summary>
+    /// Returns true unless the controller belongs to another player's rig. Controllers without a rig
+    /// (e.g. the virtual controllers from flatscreen mods) are local, and used to throw here.
+    /// </summary>
+    private static bool IsLocalController(BaseController controller)
+    {
+        if (controller == null)
+        {
+            return false;
+        }
+
+        var controllerRig = controller.contRig;
+
+        if (controllerRig == null || controllerRig.manager == null)
+        {
+            return true;
+        }
+
+        return controllerRig.manager.IsLocalPlayer();
     }
 }

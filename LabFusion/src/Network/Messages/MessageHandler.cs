@@ -32,7 +32,10 @@ public abstract class MessageHandler
             var attribute = NetAttributes[i];
 
             if (attribute.StopHandling())
+            {
+                received.Release();
                 return;
+            }
         }
 
         // Check for any awaitable attributes
@@ -70,6 +73,10 @@ public abstract class MessageHandler
         catch (Exception e)
         {
             FusionLogger.LogException($"handling message of type {GetType().Name}", e);
+        }
+        finally
+        {
+            received.Release();
         }
     }
 

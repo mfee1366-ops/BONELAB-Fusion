@@ -11,6 +11,12 @@ public class EntityOwnershipRequestMessage : NativeMessageHandler
         // Read request
         var data = received.ReadData<EntityPlayerData>();
 
+        var entity = Entities.NetworkEntityManager.IDManager.RegisteredEntities.GetEntity(data.Entity.ID);
+        if (data.PlayerID != received.Sender.Value || entity == null || !entity.IsRegistered ||
+            entity.IsOwnerLocked || entity.GetExtender<Entities.NetworkProp>() == null ||
+            !ServerTrafficPolicy.CanOwnAnotherProp(received.Sender.Value, entity))
+            return;
+
         // Send response
         var response = new EntityPlayerData()
         {

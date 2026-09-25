@@ -12,7 +12,9 @@ namespace LabFusion.Downloading.ModIO;
 
 public static class ModIOSettings
 {
-    public const string ApiPath = "https://api.mod.io/v1/games/";
+    // mod.io now routes BONELAB through its game-specific API host. The legacy
+    // shared api.mod.io host can return metadata without signed download URLs.
+    public const string ApiPath = "https://g-3809.modapi.io/v1/games/";
     public const int GameID = 3809; // BONELAB GameID
     public static string GameApiPath => $"{ApiPath}{GameID}/mods/";
 

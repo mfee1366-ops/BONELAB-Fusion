@@ -8,6 +8,7 @@ public static class CommonMessageRoutes
     public static readonly MessageRoute None = new(RelayType.None, NetworkChannel.Reliable);
 
     public static readonly MessageRoute ReliableToServer = new(RelayType.ToServer, NetworkChannel.Reliable);
+    public static readonly MessageRoute UnreliableToServer = new(RelayType.ToServer, NetworkChannel.Unreliable);
 
     public static readonly MessageRoute ReliableToClients = new(RelayType.ToClients, NetworkChannel.Reliable);
 

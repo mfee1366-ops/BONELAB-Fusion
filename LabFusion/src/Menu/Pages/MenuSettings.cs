@@ -4,8 +4,10 @@ using LabFusion.Data;
 using LabFusion.Downloading.ModIO;
 using LabFusion.Extensions;
 using LabFusion.Marrow;
+using LabFusion.Network;
 using LabFusion.Marrow.Proxies;
 using LabFusion.Preferences.Client;
+using LabFusion.Preferences.Server;
 using LabFusion.Representation;
 using LabFusion.Safety;
 using LabFusion.UI.Popups;
@@ -33,6 +35,10 @@ public static class MenuSettings
 
         PopulateSafetySettings(safetyPage);
 
+        var networkPage = rootPage.AddPage();
+
+        PopulateNetworkSettings(networkPage);
+
 #if DEBUG
         var debugPage = rootPage.AddPage();
 
@@ -46,6 +52,7 @@ public static class MenuSettings
         categoriesPage.AddElement<FunctionElement>("Client").Link(clientPage).WithColor(Color.white);
         categoriesPage.AddElement<FunctionElement>("Downloading").Link(downloadingPage).WithColor(Color.cyan);
         categoriesPage.AddElement<FunctionElement>("Safety").Link(safetyPage).WithColor(Color.yellow);
+        categoriesPage.AddElement<FunctionElement>("Network").Link(networkPage).WithColor(Color.green);
 
 #if DEBUG
         categoriesPage.AddElement<FunctionElement>("Debug").Link(debugPage).WithColor(Color.red);
@@ -205,6 +212,71 @@ public static class MenuSettings
 
         generalGroup.AddElement<BoolElement>("Filter Profanity")
             .AsPref(ClientSettings.Safety.FilterProfanity);
+    }
+
+    private static void PopulateNetworkSettings(PageElement page)
+    {
+        var hostGroup = page.AddElement<GroupElement>("Host Optimization");
+        hostGroup.AddElement<BoolElement>("Adaptive Pose Rates")
+            .AsPref(SavedServerSettings.AdaptivePoseRates)
+            .WithInteractability(NetworkInfo.IsHost || !NetworkInfo.HasServer);
+        hostGroup.AddElement<IntElement>("Network Tick Rate")
+            .AsPref(SavedServerSettings.NetworkTickRate).WithLimits(NetworkOptimizationState.MinTickRate, NetworkOptimizationState.MaxTickRate).WithIncrement(5)
+            .WithInteractability(NetworkInfo.IsHost || !NetworkInfo.HasServer);
+        hostGroup.AddElement<BoolElement>("Host Relay Culling")
+            .AsPref(SavedServerSettings.HostRelayCulling)
+            .WithInteractability(NetworkInfo.IsHost || !NetworkInfo.HasServer);
+        hostGroup.AddElement<FloatElement>("Player Range")
+            .AsPref(SavedServerSettings.PlayerRelevanceRange).WithLimits(20f, 500f).WithIncrement(10f)
+            .WithInteractability(NetworkInfo.IsHost || !NetworkInfo.HasServer);
+        hostGroup.AddElement<FloatElement>("Prop Range")
+            .AsPref(SavedServerSettings.PropRelevanceRange).WithLimits(20f, 500f).WithIncrement(10f)
+            .WithInteractability(NetworkInfo.IsHost || !NetworkInfo.HasServer);
+        hostGroup.AddElement<FloatElement>("Voice Range")
+            .AsPref(SavedServerSettings.VoiceRelevanceRange).WithLimits(5f, 100f).WithIncrement(5f)
+            .WithInteractability(NetworkInfo.IsHost || !NetworkInfo.HasServer);
+        hostGroup.AddElement<IntElement>("Prop Ownership Limit")
+            .AsPref(SavedServerSettings.PropOwnershipLimit).WithLimits(1, 255).WithIncrement(1)
+            .WithInteractability(NetworkInfo.IsHost || !NetworkInfo.HasServer);
+        hostGroup.AddElement<IntElement>("Spawns Per 10 Seconds")
+            .AsPref(SavedServerSettings.SpawnLimitPerTenSeconds).WithLimits(1, 255).WithIncrement(1)
+            .WithInteractability(NetworkInfo.IsHost || !NetworkInfo.HasServer);
+
+        var settings = ClientSettings.NetworkOptimization;
+        var optimizationGroup = page.AddElement<GroupElement>("Client Culling & Visuals");
+
+        optimizationGroup.AddElement<BoolElement>("Adaptive Pose Rates")
+            .AsPref(settings.AdaptivePoseRates);
+        optimizationGroup.AddElement<BoolElement>("Client Culling")
+            .AsPref(settings.RelevanceFiltering);
+        optimizationGroup.AddElement<FloatElement>("Player Range")
+            .AsPref(settings.PlayerRange).WithLimits(20f, 500f).WithIncrement(10f);
+        optimizationGroup.AddElement<FloatElement>("Prop Range")
+            .AsPref(settings.PropRange).WithLimits(20f, 500f).WithIncrement(10f);
+        optimizationGroup.AddElement<FloatElement>("Voice Range")
+            .AsPref(settings.VoiceRange).WithLimits(5f, 100f).WithIncrement(5f);
+        optimizationGroup.AddElement<BoolElement>("Distant Blue Diamond Avatars")
+            .AsPref(settings.DistantCapsuleAvatars);
+        optimizationGroup.AddElement<BoolElement>("Rotate When Grabbed")
+            .AsPref(settings.RotateWhenGrabbed);
+        optimizationGroup.AddElement<BoolElement>("Avatar Motion Smoothing")
+            .AsPref(settings.AvatarMotionSmoothing);
+        optimizationGroup.AddElement<IntElement>("Physics Rate (Hz)")
+            .AsPref(settings.PhysicsRate).WithLimits(Patching.PhysicsRatePatches.MinRate, Patching.PhysicsRatePatches.MaxRate).WithIncrement(10);
+
+        var metricsGroup = page.AddElement<GroupElement>("Live Metrics");
+        var tick = metricsGroup.AddElement<LabelElement>("Tick: --");
+        var allocation = metricsGroup.AddElement<LabelElement>("Allocations: --");
+        var props = metricsGroup.AddElement<LabelElement>("Moving Props: --");
+        var relays = metricsGroup.AddElement<LabelElement>("Relay Recipients: --");
+
+        metricsGroup.AddElement<FunctionElement>("Refresh Metrics").Do(() =>
+        {
+            tick.Title = $"Tick: {NetworkMetrics.LastTickMilliseconds:F2} ms | p95 {NetworkMetrics.P95TickMilliseconds:F2} ms | worst {NetworkMetrics.WorstTickMilliseconds:F2} ms";
+            allocation.Title = $"Allocations: {NetworkMetrics.AllocatedBytesLastTick:N0} bytes/tick";
+            props.Title = $"Moving Props: {NetworkMetrics.ActiveMovingProps}";
+            relays.Title = $"Relay Recipients: {NetworkMetrics.RelayRecipients:N0}";
+        });
     }
 
 #if DEBUG

@@ -195,6 +195,11 @@ public static class MirrorPatches
     [HarmonyPatch(nameof(Mirror.OnTriggerExit))]
     public static bool OnTriggerExit(Mirror __instance, Collider c)
     {
+        if (!__instance || !c)
+        {
+            return true;
+        }
+
         var rb = c.attachedRigidbody;
         if (!rb)
         {
@@ -236,9 +241,15 @@ public static class MirrorPatches
 
         if (isTarget)
         {
+            var equippedItems = playerId.EquippedItems;
+            if (equippedItems == null)
+            {
+                return isTarget;
+            }
+
             foreach (var item in PointItemManager.LoadedItems)
             {
-                if (playerId.EquippedItems.Contains(item.Barcode))
+                if (item != null && item.Barcode != null && equippedItems.Contains(item.Barcode))
                 {
                     item.OnUpdateObjects(new PointItemPayload()
                     {

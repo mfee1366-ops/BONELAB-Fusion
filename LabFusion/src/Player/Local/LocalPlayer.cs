@@ -154,6 +154,32 @@ public static class LocalPlayer
     }
 
     /// <summary>
+    /// Releases any of the local player's hands that are holding something under the given root, such as another player's rig.
+    /// </summary>
+    public static void ReleaseGripsOn(Transform root)
+    {
+        if (!RigData.HasPlayer || root == null)
+        {
+            return;
+        }
+
+        var physicsRig = RigData.Refs.RigManager.physicsRig;
+
+        ReleaseIfHolding(physicsRig.leftHand, root);
+        ReleaseIfHolding(physicsRig.rightHand, root);
+    }
+
+    private static void ReleaseIfHolding(Hand hand, Transform root)
+    {
+        var attached = hand.m_CurrentAttachedGO;
+
+        if (attached != null && attached.transform.IsChildOf(root))
+        {
+            hand.TryDetach();
+        }
+    }
+
+    /// <summary>
     /// Teleports the Local Player to their checkpoint.
     /// </summary>
     public static void TeleportToCheckpoint()

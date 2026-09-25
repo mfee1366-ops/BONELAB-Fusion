@@ -20,6 +20,10 @@ public class SpawnRequestMessage : NativeMessageHandler
     {
         var data = received.ReadData<SerializedSpawnData>();
 
+        if (!ServerTrafficPolicy.TryConsumeSpawn(received.Sender.Value) ||
+            !ServerTrafficPolicy.CanOwnAnotherProp(received.Sender.Value))
+            return;
+
         // Check for spawnable blacklist
         if (ModBlacklist.IsBlacklisted(data.Barcode) || GlobalModBlacklistManager.IsBarcodeBlacklisted(data.Barcode))
         {

@@ -79,6 +79,26 @@ public static class PhysicsRigPatches
         return true;
     }
 
+    [HarmonyPostfix]
+    [HarmonyPatch(nameof(PhysicsRig.UnRagdollRig))]
+    public static void UnRagdollRigPostfix(PhysicsRig __instance)
+    {
+        if (__instance.manager.IsLocalPlayer())
+        {
+            LocalRagdoll.LevelAfterStandingUp();
+        }
+    }
+
+    [HarmonyPostfix]
+    [HarmonyPatch(nameof(PhysicsRig.TurnOnRig))]
+    public static void TurnOnRigPostfix(PhysicsRig __instance)
+    {
+        if (__instance.manager.IsLocalPlayer())
+        {
+            LocalRagdoll.LevelAfterStandingUp();
+        }
+    }
+
     [HarmonyPrefix]
     [HarmonyPatch(nameof(PhysicsRig.ShutdownRig))]
     public static void ShutdownRig(PhysicsRig __instance)

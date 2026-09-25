@@ -118,7 +118,7 @@ public class ConnectionRequestMessage : NativeMessageHandler
         }
 
         // Compare versions
-        VersionResult versionResult = NetworkVerification.CompareVersion(FusionMod.Version, data.Version);
+        VersionResult versionResult = NetworkVerification.CompareVersion(FusionMod.NetworkVersion, data.Version);
 
         if (versionResult != VersionResult.Ok)
         {

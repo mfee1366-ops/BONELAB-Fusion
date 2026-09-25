@@ -39,6 +39,8 @@ public static class ClientSettings
 
     public static SafetySettings Safety { get; private set; }
 
+    public static NetworkOptimizationSettings NetworkOptimization { get; private set; }
+
     public static void OnInitialize(MelonPreferences_Category category)
     {
         // Client settings
@@ -84,5 +86,8 @@ public static class ClientSettings
 
         Safety = new SafetySettings();
         Safety.CreatePrefs(category);
+
+        NetworkOptimization = new NetworkOptimizationSettings();
+        NetworkOptimization.CreatePrefs(category);
     }
 }

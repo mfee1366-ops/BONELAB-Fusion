@@ -9,6 +9,7 @@ namespace LabFusion.Network.Serialization;
 
 public sealed class NetWriter : INetSerializer, IDisposable
 {
+    [ThreadStatic] private static Stack<NetWriter> _writerPool;
     public const int DefaultCapacity = 4096;
 
     public bool IsReader => false;
@@ -41,11 +42,21 @@ public sealed class NetWriter : INetSerializer, IDisposable
     /// <returns></returns>
     public static NetWriter Create(int capacity)
     {
-        return new NetWriter
-        {
-            _buffer = ArrayPool<byte>.Shared.Rent(capacity),
-            Position = 0,
-        };
+        var pool = _writerPool ??= new Stack<NetWriter>(16);
+        var writer = pool.Count > 0 ? pool.Pop() : new NetWriter();
+        writer._buffer = ArrayPool<byte>.Shared.Rent(capacity);
+        writer.Position = 0;
+        return writer;
+    }
+
+    internal byte[] DetachBuffer(out int length)
+    {
+        length = Position;
+        var buffer = _buffer;
+        _buffer = null;
+        Position = 0;
+        ReturnWriterObject();
+        return buffer;
     }
 
     public void Write(byte value)
@@ -148,6 +159,12 @@ public sealed class NetWriter : INetSerializer, IDisposable
             _buffer[Position] = value[i];
             Position++;
         }
+    }
+
+    public void WriteRaw(ArraySegment<byte> value)
+    {
+        value.AsSpan().CopyTo(new Span<byte>(_buffer, Position, value.Count));
+        Position += value.Count;
     }
 
     public void Write(string[] value)
@@ -253,8 +270,16 @@ public sealed class NetWriter : INetSerializer, IDisposable
 
     public void Dispose()
     {
-        GC.SuppressFinalize(this);
-
+        if (_buffer == null) return;
         ArrayPool<byte>.Shared.Return(_buffer);
+        _buffer = null;
+        Position = 0;
+        ReturnWriterObject();
+    }
+
+    private void ReturnWriterObject()
+    {
+        var pool = _writerPool ??= new Stack<NetWriter>(16);
+        if (pool.Count < 64) pool.Push(this);
     }
 }

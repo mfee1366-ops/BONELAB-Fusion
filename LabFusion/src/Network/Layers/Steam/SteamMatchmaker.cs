@@ -129,7 +129,7 @@ public sealed class SteamMatchmaker : IMatchmaker
 
         if (filters.FilterMismatchingVersions)
         {
-            var version = FusionMod.Version;
+            var version = FusionMod.NetworkVersion;
             var versionMajor = version.Major;
             var versionMinor = version.Minor;
 

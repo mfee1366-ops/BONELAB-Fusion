@@ -97,7 +97,7 @@ public static class ModuleMessageManager
 
             if (TagToHandlerLookup.TryGetValue(tag, out var handler))
             {
-                var buffer = GetBuffer(bytes);
+                var buffer = GetBuffer(bytes, received.Length);
 
                 var payload = new ReceivedMessage()
                 {
@@ -129,7 +129,7 @@ public static class ModuleMessageManager
 
             if (TagToHandlerLookup.TryGetValue(tag, out var handler))
             {
-                var buffer = GetBuffer(bytes);
+                var buffer = GetBuffer(bytes, received.Length);
 
                 var payload = new ReceivedMessage()
                 {
@@ -153,9 +153,10 @@ public static class ModuleMessageManager
         return BinaryPrimitives.ReadInt64BigEndian(bytes);
     }
 
-    private static byte[] GetBuffer(byte[] bytes)
+    private static byte[] GetBuffer(byte[] bytes, int length)
     {
-        var buffer = new byte[bytes.Length - sizeof(long)];
+        // Pooled receive arrays can be longer than the payload, so only copy the valid length
+        var buffer = new byte[length - sizeof(long)];
 
         for (var i = 0; i < buffer.Length; i++)
         {

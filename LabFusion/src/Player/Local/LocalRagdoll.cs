@@ -1,6 +1,8 @@
 ﻿using Il2CppSLZ.Marrow;
 
 using LabFusion.Data;
+using LabFusion.Extensions;
+using LabFusion.Representation;
 using LabFusion.Patching;
 using LabFusion.SDK.Gamemodes;
 using LabFusion.Utilities;
@@ -148,5 +150,63 @@ public static class LocalRagdoll
 
         // Unragdoll the rig
         ToggleRagdoll(false);
+    }
+
+    private const float LevelDuration = 1f;
+    private const float LevelToleranceDegrees = 0.5f;
+
+    private static bool _isLeveling = false;
+
+    /// <summary>
+    /// Keeps the local playspace level for a moment after standing up from a ragdoll. The playspace
+    /// should only ever turn around yaw, but standing up could leave it pitched or rolled, tilting the view
+    /// and the player as everyone else sees them.
+    /// </summary>
+    public static void LevelAfterStandingUp()
+    {
+        if (_isLeveling || !RigData.HasPlayer)
+        {
+            return;
+        }
+
+        MelonCoroutines.Start(LevelPlayspaceCoroutine());
+    }
+
+    private static IEnumerator LevelPlayspaceCoroutine()
+    {
+        _isLeveling = true;
+
+        float elapsed = 0f;
+
+        while (elapsed < LevelDuration && RigData.HasPlayer)
+        {
+            LevelPlayspace();
+
+            elapsed += TimeReferences.DeltaTime;
+
+            yield return null;
+        }
+
+        _isLeveling = false;
+    }
+
+    private static void LevelPlayspace()
+    {
+        var references = RigData.Refs;
+        var playspace = references.RigManager.GetSmoothTurnTransform();
+
+        var rotation = playspace.rotation;
+        var level = rotation.YawOnly();
+
+        if (Quaternion.Angle(rotation, level) < LevelToleranceDegrees)
+        {
+            return;
+        }
+
+        // Rotate around the head so the view doesn't swing sideways while leveling
+        var pivot = references.Headset.position;
+        var correction = level * Quaternion.Inverse(rotation);
+
+        playspace.SetPositionAndRotation(pivot + correction * (playspace.position - pivot), level);
     }
 }

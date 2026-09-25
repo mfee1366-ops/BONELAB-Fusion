@@ -40,7 +40,9 @@ public class RigPose : INetSerializable
         // Read tracked points
         for (var i = 0; i < RigAbstractor.TransformSyncCount; i++)
         {
-            TrackedPoints[i] = new SerializedLocalTransform(skeleton.TrackedPoints[i]);
+            var trackedPoint = TrackedPoints[i] ??= new SerializedLocalTransform();
+            trackedPoint.position = skeleton.TrackedPoints[i].localPosition;
+            trackedPoint.rotation = skeleton.TrackedPoints[i].localRotation;
         }
 
         // Read playspace

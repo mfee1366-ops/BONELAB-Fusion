@@ -174,9 +174,13 @@ public abstract class NetworkLayer
     /// <param name="message"></param>
     public virtual void BroadcastMessageExcept(byte userId, NetworkChannel channel, NetMessage message, bool ignoreHost = true)
     {
+        if (!NetworkRelevance.ShouldRelayMessage(message.Tag, userId))
+            return;
+
         foreach (var id in PlayerIDManager.PlayerIDs)
         {
-            if (id.SmallID != userId && (id.SmallID != 0 || !ignoreHost))
+            if (id.SmallID != userId && (id.SmallID != 0 || !ignoreHost) &&
+                NetworkRelevance.ShouldRelay(message, userId, id.SmallID))
             {
                 SendFromServer(id.SmallID, channel, message);
             }
@@ -191,9 +195,14 @@ public abstract class NetworkLayer
     /// <param name="message"></param>
     public virtual void BroadcastMessageExcept(ulong userId, NetworkChannel channel, NetMessage message, bool ignoreHost = true)
     {
+        var sender = PlayerIDManager.GetPlayerID(userId);
+        if (sender != null && !NetworkRelevance.ShouldRelayMessage(message.Tag, sender.SmallID))
+            return;
+
         foreach (var id in PlayerIDManager.PlayerIDs)
         {
-            if (id.PlatformID != userId && (id.SmallID != 0 || !ignoreHost))
+            if (id.PlatformID != userId && (id.SmallID != 0 || !ignoreHost) &&
+                (sender == null || NetworkRelevance.ShouldRelay(message, sender.SmallID, id.SmallID)))
             {
                 SendFromServer(id.SmallID, channel, message);
             }

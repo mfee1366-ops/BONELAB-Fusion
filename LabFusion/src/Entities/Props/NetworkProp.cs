@@ -3,7 +3,9 @@
 using LabFusion.Data;
 using LabFusion.MonoBehaviours;
 using LabFusion.Network;
+using LabFusion.Network.Serialization;
 using LabFusion.Player;
+using LabFusion.Preferences.Client;
 using LabFusion.Utilities;
 
 using UnityEngine;
@@ -30,6 +32,7 @@ public class NetworkProp : IEntityExtender, IMarrowEntityExtender, IEntityUpdata
     private float _lastReceivedTime = 0f;
 
     private float _ownerSleepElapsed = 0f;
+    private int _ownedPoseTicks;
 
     private DestroySensor _destroySensor = null;
 
@@ -411,6 +414,21 @@ public class NetworkProp : IEntityExtender, IMarrowEntityExtender, IEntityUpdata
             return;
         }
 
+        NetworkMetrics.ActiveMovingProps++;
+
+        // Slow props are visually stable with fewer samples. Fast/interacting
+        // props retain the full 20 Hz cadence; nearly settled props use 5 Hz.
+        float maxVelocitySqr = 0f;
+        for (var i = 0; i < EntityPose.Bodies.Length; i++)
+            maxVelocitySqr = Mathf.Max(maxVelocitySqr, EntityPose.Bodies[i].Velocity.sqrMagnitude);
+
+        int interval = !NetworkOptimizationState.AdaptivePoseRates
+            ? 1
+            : maxVelocitySqr < 0.0625f ? 4 : maxVelocitySqr < 1f ? 2 : 1;
+        if (++_ownedPoseTicks < interval)
+            return;
+        _ownedPoseTicks = 0;
+
         SendEntityPose(CommonMessageRoutes.UnreliableToOtherClients);
     }
 
@@ -424,6 +442,62 @@ public class NetworkProp : IEntityExtender, IMarrowEntityExtender, IEntityUpdata
 
         MessageRelay.RelayNative(data, NativeMessageTag.EntityPoseUpdate, route);
 
+        EntityPose.CopyTo(_sentPose);
+    }
+
+    private const float SettledVelocitySqr = 0.01f;
+
+    /// <summary>
+    /// Returns true if any body in the last known pose is moving faster than 0.1 m/s.
+    /// </summary>
+    internal bool HasMovingPose()
+    {
+        var bodies = EntityPose?.Bodies;
+        if (bodies == null)
+            return false;
+
+        for (var i = 0; i < bodies.Length; i++)
+        {
+            if (bodies[i].Velocity.sqrMagnitude > SettledVelocitySqr)
+                return true;
+        }
+        return false;
+    }
+
+    private bool HasPoseChangedSinceSent()
+    {
+        for (var i = 0; i < _pose.Bodies.Length; i++)
+        {
+            if (HasBodyMoved(i))
+                return true;
+        }
+        return false;
+    }
+
+    internal void SendAuthoritativeSnapshot()
+    {
+        if (!NetworkInfo.IsHost || !NetworkEntity.IsRegistered || NetworkEntity.OwnerID == null)
+            return;
+
+        if (NetworkEntity.IsOwner)
+            CopyBodiesToPose();
+
+        // Moving props already stream fresh poses. The host's copy of a remote-owned prop lags behind,
+        // so sending it reliably would snap the prop backwards on every other client.
+        if (HasMovingPose())
+            return;
+
+        // Settled props whose pose was already sent (by a reliable sleep pose or an earlier snapshot)
+        // don't need resending. Otherwise every prop in the map went out reliably every 10 seconds.
+        if (!HasPoseChangedSinceSent())
+            return;
+
+        var data = new EntityPoseUpdateData { Entity = new(NetworkEntity), Pose = EntityPose };
+        using var writer = NetWriter.Create(data.GetSize());
+        data.Serialize(writer);
+        using var message = NetMessage.Create(NativeMessageTag.EntityPoseUpdate, writer,
+            CommonMessageRoutes.ReliableToClients, NetworkEntity.OwnerID.SmallID);
+        MessageSender.BroadcastMessage(NetworkChannel.Reliable, message);
         EntityPose.CopyTo(_sentPose);
     }
 

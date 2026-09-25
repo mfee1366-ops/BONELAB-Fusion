@@ -297,11 +297,11 @@ public static class MenuMatchmaking
     private static IEnumerable<IMatchmaker.LobbyInfo> SortLobbies(IEnumerable<IMatchmaker.LobbyInfo> lobbies)
     {
         return lobbies
-            .OrderBy(l => l.Metadata.LobbyInfo.LobbyHostName)
-            .OrderByDescending(l => l.Metadata.LobbyInfo.PlayerCount)
+            .Where(CheckLobbyVisibility)
             .OrderByDescending(l => l.Metadata.LobbyInfo.LobbyVersion)
-            .OrderBy(l => l.Metadata.LobbyInfo.LevelTitle)
-            .Where(CheckLobbyVisibility);
+            .ThenByDescending(l => l.Metadata.LobbyInfo.PlayerCount)
+            .ThenBy(l => l.Metadata.LobbyInfo.LevelTitle)
+            .ThenBy(l => l.Metadata.LobbyInfo.LobbyHostName);
     }
 
     public static bool LoadLobbiesIntoBrowser(IEnumerable<IMatchmaker.LobbyInfo> lobbies) 
@@ -398,7 +398,7 @@ public static class MenuMatchmaking
             levelColor = Color.yellow;
         }
 
-        if (NetworkVerification.CompareVersion(metadata.LobbyInfo.LobbyVersion, FusionMod.Version) != VersionResult.Ok)
+        if (NetworkVerification.CompareVersion(metadata.LobbyInfo.LobbyVersion, FusionMod.NetworkVersion) != VersionResult.Ok)
         {
             versionColor = Color.red;
         }
@@ -461,7 +461,7 @@ public static class MenuMatchmaking
             levelColor = Color.yellow;
         }
 
-        if (NetworkVerification.CompareVersion(info.LobbyInfo.LobbyVersion, FusionMod.Version) != VersionResult.Ok)
+        if (NetworkVerification.CompareVersion(info.LobbyInfo.LobbyVersion, FusionMod.NetworkVersion) != VersionResult.Ok)
         {
             lobbyColor = Color.red;
             versionColor = Color.red;

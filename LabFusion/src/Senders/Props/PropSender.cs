@@ -68,6 +68,9 @@ public static class PropSender
 
     private static void Internal_InitializePropSyncable(PropCreationInfo info)
     {
+        if (DedicatedServerHandler.IsActive && !DedicatedServerHandler.MapPropsEnabled)
+            return;
+
         NetworkEntity newEntity = null;
         NetworkProp newProp = null;
 

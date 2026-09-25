@@ -1,5 +1,6 @@
 ﻿using LabFusion.Data;
 using LabFusion.Network.Serialization;
+using LabFusion.Extensions;
 
 using UnityEngine;
 
@@ -51,6 +52,24 @@ public class BodyPose : INetSerializable
 
     public void Serialize(INetSerializer serializer)
     {
+        if (serializer is NetWriter writer)
+        {
+            WriteVector(writer, Position, false);
+            WriteQuaternion(writer, Rotation);
+            WriteVector(writer, Velocity, true);
+            WriteVector(writer, AngularVelocity, true);
+            return;
+        }
+
+        if (serializer is NetReader reader)
+        {
+            Position = ReadVector(reader, false);
+            Rotation = ReadQuaternion(reader);
+            Velocity = ReadVector(reader, true);
+            AngularVelocity = ReadVector(reader, true);
+            return;
+        }
+
         SerializedShortVector3 position = null;
         SerializedSmallQuaternion rotation = null;
         SerializedSmallVector3 velocity = null;
@@ -77,4 +96,35 @@ public class BodyPose : INetSerializable
             this.AngularVelocity = angularVelocity.Expand();
         }
     }
+
+    private static void WriteVector(NetWriter writer, Vector3 value, bool small)
+    {
+        float magnitude = value.magnitude;
+        Vector3 normalized = magnitude > 0f ? value / magnitude : Vector3.zero;
+        if (small)
+        {
+            writer.Write(normalized.x.ToSByte()); writer.Write(normalized.y.ToSByte()); writer.Write(normalized.z.ToSByte());
+        }
+        else
+        {
+            writer.Write((short)(normalized.x * 30000f)); writer.Write((short)(normalized.y * 30000f)); writer.Write((short)(normalized.z * 30000f));
+        }
+        writer.Write(magnitude);
+    }
+
+    private static Vector3 ReadVector(NetReader reader, bool small)
+    {
+        Vector3 normalized = small
+            ? new Vector3(reader.ReadSByte().ToSingle(), reader.ReadSByte().ToSingle(), reader.ReadSByte().ToSingle()).normalized
+            : new Vector3(reader.ReadInt16() / 30000f, reader.ReadInt16() / 30000f, reader.ReadInt16() / 30000f).normalized;
+        return normalized * reader.ReadSingle();
+    }
+
+    private static void WriteQuaternion(NetWriter writer, Quaternion value)
+    {
+        writer.Write(value.x.ToSByte()); writer.Write(value.y.ToSByte()); writer.Write(value.z.ToSByte()); writer.Write(value.w.ToSByte());
+    }
+
+    private static Quaternion ReadQuaternion(NetReader reader) => new Quaternion(
+        reader.ReadSByte().ToSingle(), reader.ReadSByte().ToSingle(), reader.ReadSByte().ToSingle(), reader.ReadSByte().ToSingle()).normalized;
 }

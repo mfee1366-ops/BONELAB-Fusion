@@ -8,6 +8,8 @@ using MelonLoader;
 
 using System.Collections;
 
+using UnityEngine;
+
 namespace LabFusion.Entities;
 
 public class RigGrabber
@@ -89,12 +91,38 @@ public class RigGrabber
 
             // Attach the hand
             grip.TryAttach(hand, false, targetInBase);
+
+            // Track hands holding the local player for the optional "Rotate When Grabbed" setting
+            if (LocalGrabRotation.IsLocalPlayerGrip(grip))
+            {
+                LocalGrabRotation.Register(this, handedness, hand, grip, GetController(handedness));
+            }
+            else
+            {
+                LocalGrabRotation.Unregister(this, handedness);
+            }
         }
+    }
+
+    private Transform GetController(Handedness handedness)
+    {
+        var controllerRig = _references.RigManager.ControllerRig.TryCast<OpenControllerRig>();
+
+        if (controllerRig == null)
+        {
+            return null;
+        }
+
+        var controller = handedness == Handedness.LEFT ? controllerRig.leftController : controllerRig.rightController;
+
+        return controller != null ? controller.transform : null;
     }
 
     public void Detach(Handedness handedness)
     {
         _lastGrabs.Remove(handedness);
+
+        LocalGrabRotation.Unregister(this, handedness);
 
         DetachWithoutClear(handedness);
     }

@@ -7,6 +7,8 @@ namespace LabFusion.Network;
 /// </summary>
 public struct ReceivedMessage
 {
+    internal bool IsPooled { get; set; }
+    internal int PayloadLength { get; set; }
     /// <summary>
     /// The route that this message was sent through, including its relay type, network channel, and targets.
     /// </summary>
@@ -37,13 +39,26 @@ public struct ReceivedMessage
     /// </summary>
     /// <typeparam name="TSerializable"></typeparam>
     /// <returns>The read data.</returns>
+    /// <summary>
+    /// The number of valid bytes in <see cref="Bytes"/>. Pooled arrays can be longer than the payload they hold.
+    /// </summary>
+    internal readonly int Length => IsPooled ? PayloadLength : Bytes.Length;
+
     public readonly TSerializable ReadData<TSerializable>() where TSerializable : INetSerializable, new()
     {
-        using var reader = NetReader.Create(Bytes);
+        using var reader = NetReader.Create(Bytes, Length);
 
         TSerializable data = default;
         reader.SerializeValue(ref data);
 
         return data;
+    }
+
+    internal void Release()
+    {
+        if (!IsPooled || Bytes == null) return;
+        System.Buffers.ArrayPool<byte>.Shared.Return(Bytes);
+        Bytes = null;
+        IsPooled = false;
     }
 }

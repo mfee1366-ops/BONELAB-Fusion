@@ -53,7 +53,7 @@ public static class MenuMatchmakingSandbox
         var lobbyInfo = lobby.Metadata.LobbyInfo;
 
         // Make sure this lobby is on the right Fusion version
-        if (NetworkVerification.CompareVersion(lobbyInfo.LobbyVersion, FusionMod.Version) != VersionResult.Ok)
+        if (NetworkVerification.CompareVersion(lobbyInfo.LobbyVersion, FusionMod.NetworkVersion) != VersionResult.Ok)
         {
             return false;
         }

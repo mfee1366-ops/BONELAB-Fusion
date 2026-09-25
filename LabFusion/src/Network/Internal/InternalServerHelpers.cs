@@ -82,6 +82,10 @@ public static class InternalServerHelpers
     /// </summary>
     public static void OnDisconnect(string reason = "")
     {
+        // Break every grip before networked objects and players are removed, so hands don't stay
+        // stuck to objects that no longer exist
+        LocalPlayer.ReleaseGrips();
+
         // Cleanup information
         DisposeUsers();
         NetworkEntityManager.OnCleanupEntities();
@@ -130,6 +134,12 @@ public static class InternalServerHelpers
         if (playerId.TryGetDisplayName(out var name))
         {
             NetworkNotifications.SendPlayerLeftNotification(name);
+        }
+
+        // Let go of the leaving player before their rig is destroyed
+        if (NetworkPlayerManager.TryGetPlayer(playerId.SmallID, out var leavingPlayer) && leavingPlayer.HasRig)
+        {
+            LocalPlayer.ReleaseGripsOn(leavingPlayer.RigRefs.RigManager.transform);
         }
 
         DisposeUser(playerId);

@@ -95,6 +95,30 @@ public class LobbyInfo
     [JsonPropertyName("maxAvatarHeight")]
     public float MaxAvatarHeight { get; set; } = 0f;
 
+    [JsonPropertyName("adaptivePoseRates")]
+    public bool AdaptivePoseRates { get; set; } = true;
+
+    [JsonPropertyName("networkTickRate")]
+    public int NetworkTickRate { get; set; } = 20;
+
+    [JsonPropertyName("relevanceFiltering")]
+    public bool RelevanceFiltering { get; set; } = true;
+
+    [JsonPropertyName("playerRelevanceRange")]
+    public float PlayerRelevanceRange { get; set; } = 100f;
+
+    [JsonPropertyName("propRelevanceRange")]
+    public float PropRelevanceRange { get; set; } = 75f;
+
+    [JsonPropertyName("voiceRelevanceRange")]
+    public float VoiceRelevanceRange { get; set; } = 35f;
+
+    [JsonPropertyName("propOwnershipLimit")]
+    public int PropOwnershipLimit { get; set; } = 24;
+
+    [JsonPropertyName("spawnLimitPerTenSeconds")]
+    public int SpawnLimitPerTenSeconds { get; set; } = 20;
+
     // Permissions
     [JsonPropertyName("devTools")]
     public PermissionLevel DevTools { get; set; } = PermissionLevel.DEFAULT;
@@ -121,7 +145,7 @@ public class LobbyInfo
         LobbyCode = NetworkHelper.GetServerCode();
         LobbyName = SavedServerSettings.ServerName.Value;
         LobbyDescription = SavedServerSettings.ServerDescription.Value;
-        LobbyVersion = FusionMod.Version;
+        LobbyVersion = FusionMod.NetworkVersion;
         LobbyHostName = LocalPlayer.Username;
 
         PlayerCount = PlayerIDManager.PlayerCount;
@@ -160,6 +184,14 @@ public class LobbyInfo
         Knockout = SavedServerSettings.Knockout.Value;
         KnockoutLength = SavedServerSettings.KnockoutLength.Value;
         MaxAvatarHeight = SavedServerSettings.MaxAvatarHeight.Value;
+        AdaptivePoseRates = SavedServerSettings.AdaptivePoseRates.Value;
+        NetworkTickRate = SavedServerSettings.NetworkTickRate.Value;
+        RelevanceFiltering = SavedServerSettings.HostRelayCulling.Value;
+        PlayerRelevanceRange = SavedServerSettings.PlayerRelevanceRange.Value;
+        PropRelevanceRange = SavedServerSettings.PropRelevanceRange.Value;
+        VoiceRelevanceRange = SavedServerSettings.VoiceRelevanceRange.Value;
+        PropOwnershipLimit = SavedServerSettings.PropOwnershipLimit.Value;
+        SpawnLimitPerTenSeconds = SavedServerSettings.SpawnLimitPerTenSeconds.Value;
 
         // Permissions
         DevTools = SavedServerSettings.DevTools.Value;

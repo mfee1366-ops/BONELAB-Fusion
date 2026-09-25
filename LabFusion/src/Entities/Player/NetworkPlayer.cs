@@ -8,9 +8,11 @@ using LabFusion.Representation;
 using LabFusion.Utilities;
 using LabFusion.Scene;
 using LabFusion.Preferences;
+using LabFusion.Preferences.Client;
 using LabFusion.Voice;
 using LabFusion.Math;
 using LabFusion.Extensions;
+using LabFusion.Marrow;
 
 using MelonLoader;
 
@@ -66,6 +68,7 @@ public class NetworkPlayer : IEntityExtender, IMarrowEntityExtender, IEntityUpda
     private bool _receivedPose = false;
     public bool ReceivedPose => _receivedPose;
 
+
     private RigPuppet _puppet = null;
     public RigPuppet Puppet => _puppet;
 
@@ -108,6 +111,10 @@ public class NetworkPlayer : IEntityExtender, IMarrowEntityExtender, IEntityUpda
     private PDController _pelvisPDController = null;
 
     private bool _isCulled = false;
+    private bool _distanceProxyActive = false;
+    private bool _diamondShown = false;
+    private bool _isRepresentationDirty = true;
+    private DistantPlayerProxy _distantProxy;
 
     /// <summary>
     /// Returns True if this NetworkPlayer is hidden due to being zone culled.
@@ -221,6 +228,7 @@ public class NetworkPlayer : IEntityExtender, IMarrowEntityExtender, IEntityUpda
 
         _avatarSetter = new(networkEntity);
         _avatarSetter.OnAvatarChanged += UpdateAvatarSettings;
+        _avatarSetter.OnAvatarChanged += MarkRepresentationDirty;
 
         // Register the default head UI elements so they're automatically spawned in
         HeadUI.RegisterElement(_nametag);
@@ -280,20 +288,27 @@ public class NetworkPlayer : IEntityExtender, IMarrowEntityExtender, IEntityUpda
 
         _puppet.CreatePuppet(OnPuppetCreated);
 
-        bool IsPlayerLoading()
+    }
+
+    private bool IsPlayerLoading()
+    {
+        if (FusionSceneManager.IsDelayedLoading())
         {
-            if (FusionSceneManager.IsDelayedLoading())
-            {
-                return true;
-            }
+            return true;
+        }
 
-            if (PlayerID.Metadata.IsValid && PlayerID.Metadata.Loading.GetValue())
-            {
-                return true;
-            }
-
+        // Player representations may be removed while this coroutine is waiting
+        // for a scene transition. Snapshot and validate the ID before touching
+        // metadata so a disconnect cannot terminate the coroutine with an NRE.
+        var playerId = PlayerID;
+        if (playerId == null || !playerId.IsValid)
+        {
             return false;
         }
+
+        var metadata = playerId.Metadata;
+        return metadata != null && metadata.IsValid &&
+            metadata.Loading != null && metadata.Loading.GetValue();
     }
 
     internal void Internal_OnAvatarChanged(string barcode)
@@ -522,6 +537,8 @@ public class NetworkPlayer : IEntityExtender, IMarrowEntityExtender, IEntityUpda
 
         VoiceSource?.DestroyVoiceSource();
         _voiceSource = null;
+        _distantProxy?.Destroy();
+        _distantProxy = null;
 
         OnUnregisterUpdates();
     }
@@ -563,6 +580,8 @@ public class NetworkPlayer : IEntityExtender, IMarrowEntityExtender, IEntityUpda
         {
             OnOwnedUpdate();
 
+            LocalGrabRotation.OnUpdate();
+
             JawFlapper.UpdateJaw(VoiceInfo.VoiceAmplitude, deltaTime);
         }
         else
@@ -578,7 +597,9 @@ public class NetworkPlayer : IEntityExtender, IMarrowEntityExtender, IEntityUpda
             // Update the playspace rotation
             var trackedPlayspace = RigSkeleton.TrackedPlayspace;
 
-            trackedPlayspace.rotation = Quaternion.Slerp(trackedPlayspace.rotation, RigPose.TrackedPlayspaceExpanded, NetworkTickManager.InterpolationTime);
+            // Apply rotation every rendered frame. A playspace only turns around yaw; pitch or roll
+            // left over from a ragdoll would tilt the entire remote player.
+            trackedPlayspace.rotation = Quaternion.Slerp(trackedPlayspace.rotation, RigPose.TrackedPlayspaceExpanded.YawOnly(), NetworkTickManager.InterpolationTime);
         }
     }
 
@@ -602,8 +623,19 @@ public class NetworkPlayer : IEntityExtender, IMarrowEntityExtender, IEntityUpda
         }
     }
 
+    // This preference still controls pelvis correction/prediction smoothing. Tracked head and hand
+    // transforms deliberately use per-frame interpolation below instead of the snapshot buffer.
+    private static bool UseMotionSmoothing => ClientSettings.NetworkOptimization.AvatarMotionSmoothing.Value;
+
     public void OnEntityLateUpdate(float deltaTime)
     {
+        // Culled players only keep LateUpdate registered to move their diamond
+        if (IsHidden)
+        {
+            UpdateHiddenDiamond(deltaTime);
+            return;
+        }
+
         OnPlayerLateUpdate(deltaTime);
 
         UpdatableManager.OnPlayerLateUpdate(deltaTime);
@@ -634,12 +666,24 @@ public class NetworkPlayer : IEntityExtender, IMarrowEntityExtender, IEntityUpda
         {
             var physicsRig = rm.physicsRig;
 
+            bool stoodUp = false;
+
             while (_physicsRigStates.Count > 0)
             {
-                _physicsRigStates.Dequeue().Apply(physicsRig);
+                var state = _physicsRigStates.Dequeue();
+                state.Apply(physicsRig);
+
+                stoodUp |= !state.Enabled && (state.Type == PhysicsRigStateType.RAGDOLL || state.Type == PhysicsRigStateType.SHUTDOWN);
             }
 
             _isPhysicsRigDirty = false;
+
+            // Getting up from a ragdoll leaves the rig at whatever angle it fell. Reset it upright at
+            // the synced position so only yaw carries over, instead of standing up pitched or rolled.
+            if (stoodUp)
+            {
+                TeleportToPose();
+            }
         }
 
         // Update settings
@@ -665,12 +709,125 @@ public class NetworkPlayer : IEntityExtender, IMarrowEntityExtender, IEntityUpda
         }
 
         // Update distance value
-        DistanceSqr = (RigRefs.Head.position - RigData.Refs.Head.position).sqrMagnitude;
+        // A sleeping rig is frozen in place, so measure from the synced pose instead
+        var remotePosition = _physicsSleeping && ReceivedPose ? RigPose.PelvisPose.Position : RigRefs.Head.position;
+        DistanceSqr = (remotePosition - RigData.Refs.Head.position).sqrMagnitude;
+
+        UpdateDiamondRepresentation(deltaTime);
+    }
+
+    /// <summary>
+    /// Uses the diamond for distant-avatar LOD. Missing or loading avatars remain represented by
+    /// PolyBlank, independently of host relevance filtering.
+    /// </summary>
+    private void UpdateDiamondRepresentation(float deltaTime)
+    {
+        if (IsHidden || _distantProxy == null)
+        {
+            return;
+        }
+
+        bool lodEnabled = ClientSettings.NetworkOptimization.DistantCapsuleAvatars.Value;
+
+        // Enter at 20 m and leave at 18 m so a player on the boundary doesn't flicker
+        float range = _distanceProxyActive ? DiamondExitRange : DiamondRange;
+        _distanceProxyActive = lodEnabled && DistanceSqr > range * range;
+
+        // Further out, stop simulating the player's physics rig on this client entirely. Every remote
+        // player is a full physics ragdoll, which is the main cost of large lobbies.
+        float sleepRange = _physicsSleeping ? PhysicsWakeRange : PhysicsSleepRange;
+        SetPhysicsSleeping(lodEnabled && ReceivedPose && DistanceSqr > sleepRange * sleepRange);
+
+        // Missing/loading avatars use the visible PolyBlank rig. The diamond is distance LOD only.
+        bool showDiamond = _distanceProxyActive;
+
+        // Only touch the renderers when the representation changes. Culling and avatar swaps
+        // re-enable the art, so they mark the representation dirty to re-apply it.
+        if (showDiamond != _diamondShown || _isRepresentationDirty)
+        {
+            _diamondShown = showDiamond;
+            _isRepresentationDirty = false;
+
+            _distantProxy.SetVisible(showDiamond);
+            _art.CullArt(showDiamond);
+        }
+
+        if (showDiamond)
+        {
+            float height = GetAvatarHeight();
+
+            // A sleeping rig doesn't move, so follow the synced pose instead
+            if (_physicsSleeping)
+            {
+                _distantProxy.UpdateFromPelvis(RigPose.PelvisPose.Position, height, deltaTime);
+            }
+            else
+            {
+                _distantProxy.Update(RigRefs, height, deltaTime);
+            }
+        }
+    }
+
+    private const float DiamondRange = 20f;
+    private const float DiamondExitRange = 18f;
+    private const float PhysicsSleepRange = 30f;
+    private const float PhysicsWakeRange = 27f;
+
+    private bool _physicsSleeping = false;
+
+    private void SetPhysicsSleeping(bool sleeping)
+    {
+        if (sleeping == _physicsSleeping || !HasRig)
+        {
+            return;
+        }
+
+        _physicsSleeping = sleeping;
+
+        RigRefs.RigManager.physicsRig.marrowEntity.Hibernate(sleeping, MarrowEntity.HibernationSources.Default);
+
+        // Coming back into range, snap to where the player actually is now
+        if (!sleeping)
+        {
+            ResetPelvisSmoothing();
+            TeleportToPose();
+        }
+    }
+
+    private void UpdateHiddenDiamond(float deltaTime)
+    {
+        if (_distantProxy == null)
+        {
+            return;
+        }
+
+        bool show = !ForceHide && HasRig && ReceivedPose && RigPose.PelvisPose != null &&
+            ClientSettings.NetworkOptimization.DistantCapsuleAvatars.Value;
+
+        _distantProxy.SetVisible(show);
+
+        if (show)
+        {
+            _distantProxy.UpdateFromPelvis(RigPose.PelvisPose.Position, GetAvatarHeight(), deltaTime);
+        }
+    }
+
+    private float GetAvatarHeight()
+    {
+        return AvatarSetter.AvatarStats?.height ?? MarrowGameReferences.CalibrationAvatarHeight;
+    }
+
+    private void MarkRepresentationDirty()
+    {
+        _isRepresentationDirty = true;
     }
 
     private void OnCullExtras()
     {
         _headUI.Visible = false;
+
+        _distantProxy?.SetVisible(false);
+        _diamondShown = false;
 
         if (HasRig)
         {
@@ -688,6 +845,8 @@ public class NetworkPlayer : IEntityExtender, IMarrowEntityExtender, IEntityUpda
             _art.CullArt(false);
             _physics.CullPhysics(false);
         }
+
+        MarkRepresentationDirty();
     }
 
     private void UpdateNametagVisibility()
@@ -728,6 +887,13 @@ public class NetworkPlayer : IEntityExtender, IMarrowEntityExtender, IEntityUpda
         {
             OnCullExtras();
             OnUnregisterUpdates();
+
+            // Zone culled players stay visible as a diamond at their synced position.
+            // Forcefully hidden players (e.g. by a gamemode) stay fully hidden.
+            if (!ForceHide)
+            {
+                NetworkPlayerManager.UpdatableManager.LateUpdateManager.Register(this);
+            }
         }
         else
         {
@@ -762,6 +928,8 @@ public class NetworkPlayer : IEntityExtender, IMarrowEntityExtender, IEntityUpda
 
     public void TeleportToPose()
     {
+        ResetPelvisSmoothing();
+
         // Don't teleport if no pose
         if (!ReceivedPose || !HasRig)
         {
@@ -794,9 +962,41 @@ public class NetworkPlayer : IEntityExtender, IMarrowEntityExtender, IEntityUpda
         MessageRelay.RelayNative(data, NativeMessageTag.PlayerPoseUpdate, CommonMessageRoutes.UnreliableToOtherClients);
     }
 
+    // Pelvis smoothing: how quickly the gap between poses is blended out, and the longest the body is extrapolated
+    private const float PelvisCorrectionRate = 10f;
+    private const float MaxPelvisPrediction = 0.25f;
+    private const float MaxPelvisCorrectionSqr = 1f;
+
+    private Vector3 _pelvisCorrection = Vector3.zero;
+    private Vector3 _lastPelvisTarget = Vector3.zero;
+    private bool _hasPelvisTarget = false;
+    private float _pelvisPredictionTime = 0f;
+
+    private void ResetPelvisSmoothing()
+    {
+        _pelvisCorrection = Vector3.zero;
+        _hasPelvisTarget = false;
+        _pelvisPredictionTime = 0f;
+    }
+
+    private void OnReceivePelvisPose(BodyPose pelvisPose)
+    {
+        _pelvisPredictionTime = 0f;
+
+        if (!_hasPelvisTarget || pelvisPose == null)
+        {
+            return;
+        }
+
+        // Keep the body where it was heading and blend toward the new pose. Large gaps (teleports) snap.
+        var correction = _lastPelvisTarget - pelvisPose.Position;
+        _pelvisCorrection = correction.sqrMagnitude < MaxPelvisCorrectionSqr ? correction : Vector3.zero;
+    }
+
     private void OnApplyBodyForces(float deltaTime)
     {
-        if (!ReceivedPose)
+        // A sleeping (far) rig isn't simulated, so there's nothing to drive
+        if (!ReceivedPose || _physicsSleeping)
         {
             return;
         }
@@ -823,11 +1023,30 @@ public class NetworkPlayer : IEntityExtender, IMarrowEntityExtender, IEntityUpda
         var pelvisPosition = pelvis.position;
         var pelvisRotation = pelvis.rotation;
 
-        // Move position with prediction
-        pelvisPose.PredictPosition(deltaTime);
+        bool smoothing = UseMotionSmoothing;
+
+        // Move position with prediction. With smoothing, cap it so a gap in updates can't carry the body away.
+        if (!smoothing || _pelvisPredictionTime < MaxPelvisPrediction)
+        {
+            pelvisPose.PredictPosition(deltaTime);
+            _pelvisPredictionTime += deltaTime;
+        }
+
+        var pelvisTarget = pelvisPose.PredictedPosition;
+
+        // Each new pose used to jump the target from the old extrapolation to the new position, which made
+        // bodies stutter on every update. Carry that difference over and blend it out instead.
+        if (smoothing)
+        {
+            _pelvisCorrection *= 1f - Smoothing.CalculateDecay(PelvisCorrectionRate, deltaTime);
+            pelvisTarget += _pelvisCorrection;
+        }
+
+        _lastPelvisTarget = pelvisTarget;
+        _hasPelvisTarget = true;
 
         // Check for stability teleport
-        float distSqr = (pelvisPosition - pelvisPose.PredictedPosition).sqrMagnitude;
+        float distSqr = (pelvisPosition - pelvisTarget).sqrMagnitude;
         if (distSqr > (2f * (pelvisPose.Velocity.magnitude + 1f)))
         {
             TeleportToPose();
@@ -835,7 +1054,7 @@ public class NetworkPlayer : IEntityExtender, IMarrowEntityExtender, IEntityUpda
         }
 
         // Apply forces
-        pelvis.AddForce(_pelvisPDController.GetForce(pelvisPosition, pelvis.velocity, pelvisPose.PredictedPosition, pelvisPose.Velocity), ForceMode.Acceleration);
+        pelvis.AddForce(_pelvisPDController.GetForce(pelvisPosition, pelvis.velocity, pelvisTarget, pelvisPose.Velocity), ForceMode.Acceleration);
 
         // Only apply angular force when the pelvis is free
         if (!rigManager.physicsRig.ballLocoEnabled)
@@ -865,6 +1084,8 @@ public class NetworkPlayer : IEntityExtender, IMarrowEntityExtender, IEntityUpda
             TeleportToPose();
             CopyPosePointsToSmoothPoints();
         }
+
+        OnReceivePelvisPose(pose.PelvisPose);
 
         // Update the health
         HealthBar.Health = pose.Health;
@@ -903,6 +1124,8 @@ public class NetworkPlayer : IEntityExtender, IMarrowEntityExtender, IEntityUpda
             var posePoint = RigPose.TrackedPoints[i];
 
             var smoothPoint = SmoothTrackedTransforms[i];
+
+            // Interpolate on every rendered frame so hands keep moving at display FPS between packets.
             smoothPoint = new ManagedTransform(
                 Vector3.Lerp(smoothPoint.Position, posePoint.position, NetworkTickManager.InterpolationTime),
                 Quaternion.Slerp(smoothPoint.Rotation, posePoint.rotation, NetworkTickManager.InterpolationTime));
@@ -918,6 +1141,13 @@ public class NetworkPlayer : IEntityExtender, IMarrowEntityExtender, IEntityUpda
     {
         _pose = null;
         _receivedPose = false;
+        _physicsSleeping = false;
+        ResetPelvisSmoothing();
+
+        // The diamond is a scene object, so recreate it alongside the next rig
+        _distantProxy?.Destroy();
+        _distantProxy = null;
+        _diamondShown = false;
 
         NetworkEntity?.ClearDataCaughtUpPlayers();
 
@@ -941,6 +1171,13 @@ public class NetworkPlayer : IEntityExtender, IMarrowEntityExtender, IEntityUpda
 
         _art = new(rigManager);
         _physics = new(rigManager);
+
+        if (!NetworkEntity.IsOwner && (_distantProxy == null || !_distantProxy.IsValid))
+        {
+            _distantProxy = new DistantPlayerProxy(PlayerID.SmallID);
+        }
+
+        MarkRepresentationDirty();
 
         HookRig();
 

@@ -22,6 +22,8 @@ public static class NetworkEntityManager
     public static EntityValidationList OwnershipTransferValidators => _ownershipTransferValidators;
 
     private static readonly Dictionary<ushort, List<NetworkEntityDelegate>> _entityRegisteredCallbacks = new();
+    private static readonly Queue<NetworkProp> _propResyncQueue = new();
+    private static float _propResyncElapsed;
 
     public static void OnInitializeManager()
     {
@@ -155,6 +157,33 @@ public static class NetworkEntityManager
     public static void OnUpdate(float deltaTime)
     {
         UpdatableManager.OnEntityUpdate(deltaTime);
+
+        PropOwnershipBalancer.OnUpdate(deltaTime);
+
+        if (!NetworkInfo.IsHost)
+        {
+            _propResyncQueue.Clear();
+            _propResyncElapsed = 0f;
+            return;
+        }
+
+        _propResyncElapsed += deltaTime;
+        if (_propResyncElapsed >= 10f)
+        {
+            _propResyncElapsed -= 10f;
+            _propResyncQueue.Clear();
+            foreach (var entity in IDManager.RegisteredEntities.IDEntityLookup.Values)
+            {
+                var prop = entity.GetExtender<NetworkProp>();
+                if (prop != null)
+                    _propResyncQueue.Enqueue(prop);
+            }
+        }
+
+        // Smooth reliable reconciliation traffic instead of bursting the full scene.
+        var budget = 4;
+        while (budget-- > 0 && _propResyncQueue.Count > 0)
+            _propResyncQueue.Dequeue().SendAuthoritativeSnapshot();
     }
 
     public static void OnFixedUpdate(float deltaTime)

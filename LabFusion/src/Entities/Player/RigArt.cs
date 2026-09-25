@@ -54,7 +54,8 @@ public class RigArt
                 continue;
             }
 
-            renderer.enabled = enabled;
+            if (renderer.enabled != enabled)
+                renderer.enabled = enabled;
         }
     }
 
@@ -65,7 +66,8 @@ public class RigArt
             return;
         }
 
-        _rigManager.avatar.gameObject.SetActive(enabled);
+        if (_rigManager.avatar.gameObject.activeSelf != enabled)
+            _rigManager.avatar.gameObject.SetActive(enabled);
     }
 
     private void ToggleAmmoPouch(bool enabled)
@@ -75,6 +77,7 @@ public class RigArt
             return;
         }
 
-        _ammoReceiver.gameObject.SetActive(enabled);
+        if (_ammoReceiver.gameObject.activeSelf != enabled)
+            _ammoReceiver.gameObject.SetActive(enabled);
     }
 }

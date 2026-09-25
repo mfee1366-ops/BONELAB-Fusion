@@ -17,12 +17,18 @@ public class RigAvatarSetter
     public event Action OnAvatarChanged;
 
     private bool _isAvatarDirty = false;
+    private int _swapVersion = 0;
     private SerializedAvatarStats _stats = null;
     private string _avatarBarcode = MarrowBarcodes.EmptyBarcode;
 
     public SerializedAvatarStats AvatarStats => _stats;
 
     public string AvatarBarcode => _avatarBarcode;
+
+    /// <summary>
+    /// True while the synced avatar could not be loaded (missing, downloading, or failed) and the rig is on the fallback avatar.
+    /// </summary>
+    public bool IsUsingFallback { get; private set; } = false;
 
     private RigRefs _references = null;
 
@@ -120,29 +126,53 @@ public class RigAvatarSetter
 
         if (_isAvatarDirty)
         {
-            references.SwapAvatarCrate(AvatarBarcode, OnSwapAvatar, OnPrepareAvatar);
-
             _isAvatarDirty = false;
+            IsLoadingAvatar = true;
+            IsUsingFallback = true;
+
+            int version = ++_swapVersion;
+            string requestedBarcode = AvatarBarcode;
+            string fallbackBarcode = MarrowGameReferences.CalibrationAvatarReference.Barcode.ID;
+
+            // Put PolyBlank on the rig first so an asynchronous custom-avatar load never leaves an
+            // invisible or stale avatar behind. A later request invalidates these callbacks.
+            if (requestedBarcode == fallbackBarcode)
+            {
+                references.SwapAvatarCrate(fallbackBarcode, success => OnSwapAvatar(version, success), OnPrepareAvatar);
+            }
+            else
+            {
+                references.SwapAvatarCrate(fallbackBarcode, success =>
+                {
+                    if (version != _swapVersion)
+                        return;
+
+                    OnAvatarChanged?.Invoke();
+                    references.SwapAvatarCrate(requestedBarcode, customSuccess => OnSwapAvatar(version, customSuccess), OnPrepareAvatar);
+                }, OnPrepareAvatar);
+            }
         }
     }
 
+    /// <summary>
+    /// True while the synced avatar is being loaded.
+    /// </summary>
+    public bool IsLoadingAvatar { get; private set; } = false;
 
-    private void OnSwapAvatar(bool success)
+    /// <summary>
+    /// True if the fallback should be shown instead of the avatar: it's loading, missing, downloading, or failed.
+    /// </summary>
+    public bool ShouldShowFallback => IsLoadingAvatar || IsUsingFallback;
+
+    private void OnSwapAvatar(int version, bool success)
     {
-        var rm = _references.RigManager;
+        if (version != _swapVersion)
+            return;
 
-        if (!success)
-        {
-            _references.SwapAvatarCrate(MarrowGameReferences.CalibrationAvatarReference.Barcode.ID, OnSwapFallback, OnPrepareAvatar);
-        }
-        else
-        {
-            OnAvatarChanged?.Invoke();
-        }
-    }
+        IsLoadingAvatar = false;
+        IsUsingFallback = !success;
 
-    private void OnSwapFallback(bool success)
-    {
+        // PolyBlank is already active if the requested avatar failed.
         OnAvatarChanged?.Invoke();
     }
 

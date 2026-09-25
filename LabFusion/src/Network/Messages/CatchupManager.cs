@@ -31,6 +31,9 @@ public static class CatchupManager
 
     public static void RequestEntityDataCatchup(PlayerID ownerID, NetworkEntityReference entityReference)
     {
+        if (ownerID == null || !ownerID.IsValid || !NetworkInfo.HasServer)
+            return;
+
         if (ownerID.IsMe)
         {
             return;
